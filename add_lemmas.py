@@ -29,7 +29,7 @@ with open(filepath, "r", encoding="utf-8") as file:
 
 # Start at line 8 based on your current script: lines[7:]
 # Python indexes start at 0, so index 7 means the 8th line.
-for line in lines[7:]:
+for line in lines[9:]:
     values = line.rstrip("\n").split("\t")
 
     rank = int(values[0])
