@@ -212,23 +212,33 @@ with open(filepath, "r", encoding="utf-8-sig", newline="") as f, \
             skipped += 1
             continue
 
+        
+
         if word_from_csv != pronunciation:
-            mismatch_log_file.write(
-                f"rank={rank} | "
-                f"csv_word={word_from_csv!r} | "
-                f"parsed_pronunciation={pronunciation!r} | "
-                f"parsed_lemma={lemma!r} | "
-                f"pos={pos!r}\n"
-            )
-            mismatch_log_file.flush()
+            additional_check = False
+            if len(pronunciation) > len(word_from_csv) + 2:
+                digit_check = pronunciation[len(word_from_csv)+1:]
+                if digit_check.isdigit() and pronunciation.startswith(word_from_csv):
+                    additional_check = True
+                    pronunciation = pronunciation[:len(word_from_csv)]
+            
+            if not additional_check:
+                mismatch_log_file.write(
+                    f"rank={rank} | "
+                    f"csv_word={word_from_csv!r} | "
+                    f"parsed_pronunciation={pronunciation!r} | "
+                    f"parsed_lemma={lemma!r} | "
+                    f"pos={pos!r}\n"
+                )
+                mismatch_log_file.flush()
 
-            print(
-                f"Mismatch at rank {rank}: "
-                f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}. Skipping."
-            )
+                print(
+                    f"Mismatch at rank {rank}: "
+                    f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}. Skipping."
+                )
 
-            skipped += 1
-            continue
+                skipped += 1
+                continue
 
         cursor.execute(
             """
