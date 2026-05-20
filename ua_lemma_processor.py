@@ -80,6 +80,11 @@ def normalize_pos(pos_text, tag=None):
         "займенник з прийменником": "pronoun_with_preposition",
         "присудкове слово": "predicative_word",
         "прикметник, найвищий ступінь": "adjective_superlative",
+        "дієприслівник": "adverbial_participle",
+        "іменник чоловічого або середнього роду, істота": "noun_masculine_or_neuter_animate",
+        "сполука": "compound",
+        "дієприкметник з прислівником": "participle_with_adverb",
+        "вигук": "interjection",
     }
 
     if pos_text not in allowed_pos:
