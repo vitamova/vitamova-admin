@@ -70,6 +70,7 @@ def normalize_pos(pos_text):
         "прикметник, вищий ступінь": "adjective_comparative",
         "іменник середнього роду, істота": "noun_neuter_animate",
         "прізвище": "surname",
+        "сполучник": "conjunction",
     }
 
     if pos_text not in allowed_pos:
