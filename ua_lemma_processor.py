@@ -131,8 +131,6 @@ def parse_tag(tag):
     return lemma, pronunciation, pos
 
 
-reader = csv.DictReader(lines)
-
 inserted = 0
 skipped = 0
 
