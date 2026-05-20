@@ -21,6 +21,10 @@ MANUAL_POS_MAP = {
     "сполука": "compound",
     "дієприкметник з прислівником": "participle_with_adverb",
     "вигук": "interjection",
+    "частка": "particle",
+    "займенник": "pronoun",
+    "іменник з прийменником": "noun_with_preposition",
+    "вставне слово": "parenthetical_word",
 }
 
 
@@ -156,33 +160,7 @@ with open(input_log_path, "r", encoding="utf-8") as input_log, \
                 remaining += 1
                 continue
 
-            if tag is None:
-                remaining_log.write(
-                    line + " | retry_error='Missing tag in original log'\n"
-                )
-                remaining += 1
-                continue
-
-            pronunciation, raw_pos_from_tag = parse_pronunciation_from_tag(tag)
-
-            if raw_pos_from_tag != raw_pos:
-                remaining_log.write(
-                    line
-                    + f" | retry_error='POS mismatch between log and tag: "
-                    + f"log={raw_pos!r}, tag={raw_pos_from_tag!r}'\n"
-                )
-                remaining += 1
-                continue
-
-            if csv_word != pronunciation:
-                remaining_log.write(
-                    line
-                    + f" | retry_error='CSV word still does not match pronunciation: "
-                    + f"csv_word={csv_word!r}, pronunciation={pronunciation!r}'\n"
-                )
-                remaining += 1
-                continue
-
+            pronunciation = csv_word
             lemma = remove_ukrainian_stress_marks(pronunciation)
             pos = MANUAL_POS_MAP[raw_pos]
 
