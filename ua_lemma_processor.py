@@ -64,7 +64,8 @@ def normalize_pos(pos_text):
         "іменник чоловічого роду, істота": "noun_masculine_animate",
         "іменник жіночого роду, істота": "noun_feminine_animate",
         "дієприкметник": "participle",
-        "іменник чоловічого або жіночого роду, істота": "noun_masculine_or_feminine_animate"
+        "іменник чоловічого або жіночого роду, істота": "noun_masculine_or_feminine_animate",
+        "множинний іменник": "noun_plural"
     }
 
     if pos_text not in allowed_pos:
