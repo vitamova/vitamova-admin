@@ -13,8 +13,6 @@ filename = input("Enter the filename (with path if not in the same directory): "
 db_user = input("Enter the database username: ")
 # Prompt database password
 db_password = input("Enter the database password: ")
-# Prompt language
-language = input("Enter the two-letter language code (e.g., 'en', 'es'): ")
 
 
 conn = psycopg2.connect(
