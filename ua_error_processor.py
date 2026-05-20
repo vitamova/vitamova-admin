@@ -7,9 +7,9 @@ import psycopg2
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-input_log_path = BASE_DIR / "ua_lemma_unknown_pos.log"
-remaining_log_path = BASE_DIR / "ua_lemma_unknown_pos_remaining.log"
-processed_log_path = BASE_DIR / "ua_lemma_unknown_pos_processed.log"
+input_log_path = BASE_DIR / "ua_lemma_unknown_pos_remaining.log"
+remaining_log_path = BASE_DIR / "ua_lemma_unknown_pos_remaining_2.log"
+processed_log_path = BASE_DIR / "ua_lemma_unknown_pos_processed_2.log"
 
 
 # Fill this in manually as you identify POS values.
@@ -25,6 +25,18 @@ MANUAL_POS_MAP = {
     "займенник": "pronoun",
     "іменник з прийменником": "noun_with_preposition",
     "вставне слово": "parenthetical_word",
+    "числівник кількісний": "numeral_cardinal",
+    "незмінне слово": "indeclinable",
+    "числівник порядковий": "numeral_ordinal",
+    "іменник жіночого або середнього роду": "noun_feminine_or_neuter",
+    "іменник чоловічого або середнього роду": "noun_masculine_or_neuter",
+    "сполучник і частка": "conjunction_and_particle",
+    "числівник": "numeral",
+    "числівник порядковий": "numeral_ordinal",
+    "числівник типу два": "numeral_dual",
+    "іменник чоловічого або жіночого роду": "noun_masculine_or_feminine",
+    "іменник жіночого або чоловічого роду, істота": "noun_feminine_or_masculine_animate",
+    "дієприслівник з часткою": "adverbial_participle_with_particle",
 }
 
 
