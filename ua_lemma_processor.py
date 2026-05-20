@@ -61,6 +61,7 @@ def normalize_pos(pos_text):
         "прислівник": "adverb",
         "дієслово доконаного виду": "verb_perfective",
         "дієслово недоконаного виду": "verb_imperfective",
+        "іменник чоловічого роду, істота": "noun_masculine_animate"
     }
 
     if pos_text not in allowed_pos:
