@@ -9,7 +9,7 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Prompt filename
-filename = "ua_raw.csv"
+filename = "ua_raw_2.csv"
 # Prompt database username
 db_user = "admin_app"
 # Prompt database password
@@ -26,8 +26,8 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 filepath = BASE_DIR / filename
-log_filepath = BASE_DIR / "ua_lemma_mismatches.log"
-pos_log_filepath = BASE_DIR / "ua_lemma_unknown_pos.log"
+log_filepath = BASE_DIR / "ua_lemma_2_mismatches.log"
+pos_log_filepath = BASE_DIR / "ua_lemma_2_unknown_pos.log"
 
 
 class LemmaParseError(Exception):
@@ -85,6 +85,26 @@ def normalize_pos(pos_text, tag=None):
         "сполука": "compound",
         "дієприкметник з прислівником": "participle_with_adverb",
         "вигук": "interjection",
+        "частка": "particle",
+        "займенник": "pronoun",
+        "іменник з прийменником": "noun_with_preposition",
+        "вставне слово": "parenthetical_word",
+        "числівник кількісний": "numeral_cardinal",
+        "незмінне слово": "indeclinable",
+        "числівник порядковий": "numeral_ordinal",
+        "іменник жіночого або середнього роду": "noun_feminine_or_neuter",
+        "іменник чоловічого або середнього роду": "noun_masculine_or_neuter",
+        "сполучник і частка": "conjunction_and_particle",
+        "прислівник і частка": "adverb_and_particle",
+        "прислівник з частками": "adverb_with_particles",
+        "числівник": "numeral",
+        "числівник порядковий": "numeral_ordinal",
+        "числівник типу \"два\"": "numeral_dual",
+        "іменник чоловічого або жіночого роду": "noun_masculine_or_feminine",
+        "іменник жіночого або чоловічого роду": "noun_feminine_or_masculine",
+        "іменник жіночого або чоловічого роду, істота": "noun_feminine_or_masculine_animate",
+        "іменник жіночого або середнього роду, істота": "noun_feminine_or_neuter_animate",
+        "дієприслівник з часткою": "adverbial_participle_with_particle",
     }
 
     if pos_text not in allowed_pos:
