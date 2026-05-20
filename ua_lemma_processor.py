@@ -72,6 +72,7 @@ def normalize_pos(pos_text):
         "прізвище": "surname",
         "сполучник": "conjunction",
         "прийменник": "preposition",
+        "власна назва": "proper_noun",
     }
 
     if pos_text not in allowed_pos:
