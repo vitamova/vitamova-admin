@@ -71,6 +71,7 @@ def normalize_pos(pos_text):
         "іменник середнього роду, істота": "noun_neuter_animate",
         "прізвище": "surname",
         "сполучник": "conjunction",
+        "прийменник": "preposition",
     }
 
     if pos_text not in allowed_pos:
