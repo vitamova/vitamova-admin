@@ -77,6 +77,7 @@ def normalize_pos(pos_text):
         "множинний іменник, істота": "noun_plural_animate",
         "абревіатура": "abbreviation",
         "займенник з прийменником": "pronoun_with_preposition",
+        "присудкове слово": "predicative_word",
     }
 
     if pos_text not in allowed_pos:
