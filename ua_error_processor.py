@@ -151,6 +151,7 @@ with open(input_log_path, "r", encoding="utf-8") as input_log, \
             rank, csv_word, raw_pos, tag = parse_log_line(line)
 
             if raw_pos not in MANUAL_POS_MAP:
+                print(f"Unknown POS at line {line_number}: {raw_pos!r}")
                 remaining_log.write(line + "\n")
                 remaining += 1
                 continue
