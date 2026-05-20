@@ -9,9 +9,9 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Prompt filename
-filename = input("Enter the filename (with path if not in the same directory): ")
+filename = "ua_raw.csv"
 # Prompt database username
-db_user = input("Enter the database username: ")
+db_user = "admin_app"
 # Prompt database password
 db_password = input("Enter the database password: ")
 
@@ -62,7 +62,8 @@ def normalize_pos(pos_text):
         "дієслово доконаного виду": "verb_perfective",
         "дієслово недоконаного виду": "verb_imperfective",
         "іменник чоловічого роду, істота": "noun_masculine_animate",
-        "іменник жіночого роду, істота": "noun_feminine_animate"
+        "іменник жіночого роду, істота": "noun_feminine_animate",
+        "дієприкметник": "participle"
     }
 
     if pos_text not in allowed_pos:
