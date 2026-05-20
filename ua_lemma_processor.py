@@ -46,7 +46,7 @@ def remove_ukrainian_stress_marks(text):
     return unicodedata.normalize("NFC", without_stress)
 
 
-def normalize_pos(pos_text):
+def normalize_pos(pos_text, tag=None):
     """
     Keep this strict-ish but readable.
     You can either store the Ukrainian grammar phrase directly
@@ -82,10 +82,13 @@ def normalize_pos(pos_text):
     }
 
     if pos_text not in allowed_pos:
+        if tag is not None:
+            print("OFFENDING TAG:")
+            print(tag)
+
         raise LemmaParseError(f"Unexpected part of speech: {pos_text}")
 
     return allowed_pos[pos_text]
-
 
 def parse_tag(tag):
     """
@@ -132,7 +135,7 @@ def parse_tag(tag):
 
     pronunciation = matches[0].group("pronunciation").strip()
     raw_pos = matches[0].group("pos").strip()
-    pos = normalize_pos(raw_pos)
+    pos = normalize_pos(raw_pos, tag)
 
     if not pronunciation:
         print("OFFENDING TAG:")
