@@ -132,8 +132,16 @@ def parse_tag(tag):
 inserted = 0
 skipped = 0
 
-with open(filepath, "r", encoding="utf-8", newline="") as f:
+with open(filepath, "r", encoding="utf-8-sig", newline="") as f:
     reader = csv.DictReader(f)
+
+    print("Detected columns:", [repr(name) for name in reader.fieldnames])
+
+    if "Word" not in reader.fieldnames:
+        raise ValueError(f"Expected column 'Word', got: {reader.fieldnames}")
+
+    if "tag" not in reader.fieldnames:
+        raise ValueError(f"Expected column 'tag', got: {reader.fieldnames}")
 
     for rank, row in enumerate(reader, start=1):
         word_from_csv = row["Word"].strip()
@@ -181,5 +189,14 @@ with open(filepath, "r", encoding="utf-8", newline="") as f:
 
         inserted += 1
 
-    print(f"Inserted {inserted} rows")
-    print(f"Skipped {skipped} duplicate rows")
+        if rank % 1000 == 0:
+            conn.commit()
+            print(f"Processed {rank} rows")
+
+conn.commit()
+
+print(f"Inserted {inserted} rows")
+print(f"Skipped {skipped} duplicate rows")
+
+cursor.close()
+conn.close()
