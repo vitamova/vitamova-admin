@@ -132,7 +132,7 @@ def parse_tag(tag):
 inserted = 0
 skipped = 0
 
-with open("ukrainian_lemmas.csv", "r", encoding="utf-8", newline="") as f:
+with open(filepath, "r", encoding="utf-8", newline="") as f:
     reader = csv.DictReader(f)
 
     for rank, row in enumerate(reader, start=1):
