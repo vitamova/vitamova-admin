@@ -216,7 +216,7 @@ with open(filepath, "r", encoding="utf-8-sig", newline="") as f, \
 
         if word_from_csv != pronunciation:
             additional_check = False
-            if len(pronunciation) > len(word_from_csv) + 2:
+            if len(pronunciation) >= len(word_from_csv) + 2:
                 digit_check = pronunciation[len(word_from_csv)+1:]
                 if digit_check.isdigit() and pronunciation.startswith(word_from_csv):
                     additional_check = True
