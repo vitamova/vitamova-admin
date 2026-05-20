@@ -27,8 +27,6 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 filepath = BASE_DIR / filename
-with open(filepath, "r", encoding="utf-8") as file:
-    lines = file.readlines()
 
 
 class LemmaParseError(Exception):
@@ -138,51 +136,54 @@ reader = csv.DictReader(lines)
 inserted = 0
 skipped = 0
 
-for rank, row in enumerate(reader, start=1):
-    word_from_csv = row["Word"].strip()
-    tag = row["tag"]
+with open("ukrainian_lemmas.csv", "r", encoding="utf-8", newline="") as f:
+    reader = csv.DictReader(f)
 
-    lemma, pronunciation, pos = parse_tag(tag)
+    for rank, row in enumerate(reader, start=1):
+        word_from_csv = row["Word"].strip()
+        tag = row["tag"]
 
-    # Strict safety check: the word column should match the parsed pronunciation.
-    # If it doesn't, something about the file or parser is not what we expect.
-    if word_from_csv != pronunciation:
-        print("OFFENDING TAG:")
-        print(tag)
-        raise LemmaParseError(
-            f"CSV word does not match parsed pronunciation. "
-            f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}"
+        lemma, pronunciation, pos = parse_tag(tag)
+
+        # Strict safety check: the word column should match the parsed pronunciation.
+        # If it doesn't, something about the file or parser is not what we expect.
+        if word_from_csv != pronunciation:
+            print("OFFENDING TAG:")
+            print(tag)
+            raise LemmaParseError(
+                f"CSV word does not match parsed pronunciation. "
+                f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}"
+            )
+
+        cursor.execute(
+            """
+            SELECT 1
+            FROM ua_lemmas
+            WHERE lemma = %s
+            AND pronunciation = %s
+            AND pos = %s
+            LIMIT 1;
+            """,
+            (lemma, pronunciation, pos)
         )
 
-    cursor.execute(
-        """
-        SELECT 1
-        FROM ua_lemmas
-        WHERE lemma = %s
-          AND pronunciation = %s
-          AND pos = %s
-        LIMIT 1;
-        """,
-        (lemma, pronunciation, pos)
-    )
+        exists = cursor.fetchone()
 
-    exists = cursor.fetchone()
+        if exists:
+            skipped += 1
+            continue
 
-    if exists:
-        skipped += 1
-        continue
-
-    cursor.execute(
-        """
-        INSERT INTO ua_lemmas
+        cursor.execute(
+            """
+            INSERT INTO ua_lemmas
+                (lemma, rank, pronunciation, pos)
+            VALUES
+                (%s, %s, %s, %s);
+            """,
             (lemma, rank, pronunciation, pos)
-        VALUES
-            (%s, %s, %s, %s);
-        """,
-        (lemma, rank, pronunciation, pos)
-    )
+        )
 
-    inserted += 1
+        inserted += 1
 
-print(f"Inserted {inserted} rows")
-print(f"Skipped {skipped} duplicate rows")
+    print(f"Inserted {inserted} rows")
+    print(f"Skipped {skipped} duplicate rows")
