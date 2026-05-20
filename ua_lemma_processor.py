@@ -68,6 +68,7 @@ def normalize_pos(pos_text):
         "множинний іменник": "noun_plural",
         "дієслово недоконаного і доконаного виду": "verb_aspectual_pair",
         "прикметник, вищий ступінь": "adjective_comparative",
+        "іменник середнього роду, істота": "noun_neuter_animate",
     }
 
     if pos_text not in allowed_pos:
