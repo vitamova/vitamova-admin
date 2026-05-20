@@ -78,6 +78,7 @@ def normalize_pos(pos_text):
         "абревіатура": "abbreviation",
         "займенник з прийменником": "pronoun_with_preposition",
         "присудкове слово": "predicative_word",
+        "прикметник, найвищий ступінь": "adjective_superlative",
     }
 
     if pos_text not in allowed_pos:
