@@ -27,6 +27,7 @@ cursor = conn.cursor()
 
 filepath = BASE_DIR / filename
 log_filepath = BASE_DIR / "ua_lemma_mismatches.log"
+pos_log_filepath = BASE_DIR / "ua_lemma_unknown_pos.log"
 
 
 class LemmaParseError(Exception):
@@ -156,7 +157,8 @@ inserted = 0
 skipped = 0
 
 with open(filepath, "r", encoding="utf-8-sig", newline="") as f, \
-     open(log_filepath, "a", encoding="utf-8") as log_file:
+     open(log_filepath, "a", encoding="utf-8") as mismatch_log_file, \
+     open(pos_log_filepath, "a", encoding="utf-8") as pos_log_file:
 
     reader = csv.DictReader(f)
 
@@ -164,18 +166,36 @@ with open(filepath, "r", encoding="utf-8-sig", newline="") as f, \
         word_from_csv = row["Word"].strip()
         tag = row["tag"]
 
-        lemma, pronunciation, pos = parse_tag(tag)
+        try:
+            lemma, pronunciation, pos = parse_tag(tag)
+
+        except LemmaParseError as e:
+            # This catches unknown POS and other parse problems.
+            # Since this is now a skip-and-log situation, don't crash the script.
+            pos_log_file.write(
+                f"rank={rank} | "
+                f"csv_word={word_from_csv!r} | "
+                f"error={str(e)!r}\n"
+            )
+            pos_log_file.flush()
+
+            print(
+                f"Parse/POS issue at rank {rank}: "
+                f"CSV Word={word_from_csv!r}. Skipping."
+            )
+
+            skipped += 1
+            continue
 
         if word_from_csv != pronunciation:
-            log_file.write(
-                f"[{datetime.now().isoformat()}] "
+            mismatch_log_file.write(
                 f"rank={rank} | "
                 f"csv_word={word_from_csv!r} | "
                 f"parsed_pronunciation={pronunciation!r} | "
                 f"parsed_lemma={lemma!r} | "
                 f"pos={pos!r}\n"
             )
-            log_file.flush()
+            mismatch_log_file.flush()
 
             print(
                 f"Mismatch at rank {rank}: "
@@ -224,6 +244,7 @@ conn.commit()
 print(f"Inserted {inserted} rows")
 print(f"Skipped {skipped} rows")
 print(f"Mismatches logged to: {log_filepath}")
+print(f"Unknown POS / parse issues logged to: {pos_log_filepath}")
 
 cursor.close()
 conn.close()
