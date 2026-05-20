@@ -9,7 +9,7 @@ from datetime import datetime
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Prompt filename
-filename = "ua_raw_2.csv"
+filename = "ua_raw.csv"
 # Prompt database username
 db_user = "admin_app"
 # Prompt database password
@@ -26,8 +26,8 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 filepath = BASE_DIR / filename
-log_filepath = BASE_DIR / "ua_lemma_2_mismatches.log"
-pos_log_filepath = BASE_DIR / "ua_lemma_2_unknown_pos.log"
+log_filepath = BASE_DIR / "ua_lemma_mismatches_2.log"
+pos_log_filepath = BASE_DIR / "ua_lemma_unknown_pos_2.log"
 
 
 class LemmaParseError(Exception):
