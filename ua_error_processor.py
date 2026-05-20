@@ -16,12 +16,11 @@ processed_log_path = BASE_DIR / "ua_lemma_unknown_pos_processed.log"
 # Left side = raw Ukrainian POS from the log.
 # Right side = value you want stored in ua_lemmas.pos.
 MANUAL_POS_MAP = {
-    # "займенник": "pronoun",
-    # "числівник": "numeral",
-    # "прийменник": "preposition",
-    # "сполучник": "conjunction",
-    # "частка": "particle",
-    # "вигук": "interjection",
+    "дієприслівник": "adverbial_participle",
+    "іменник чоловічого або середнього роду, істота": "noun_masculine_or_neuter_animate",
+    "сполука": "compound",
+    "дієприкметник з прислівником": "participle_with_adverb",
+    "вигук": "interjection",
 }
 
 
@@ -119,8 +118,7 @@ def parse_pronunciation_from_tag(tag):
     return pronunciation, raw_pos_from_tag
 
 
-# Prompt database username
-db_user = input("Enter the database username: ")
+# Prompt database password
 db_password = input("Enter the database password: ")
 
 conn = psycopg2.connect(
