@@ -63,7 +63,8 @@ def normalize_pos(pos_text):
         "дієслово недоконаного виду": "verb_imperfective",
         "іменник чоловічого роду, істота": "noun_masculine_animate",
         "іменник жіночого роду, істота": "noun_feminine_animate",
-        "дієприкметник": "participle"
+        "дієприкметник": "participle",
+        "іменник чоловічого або жіночого роду, істота": "noun_masculine_or_feminine_animate"
     }
 
     if pos_text not in allowed_pos:
