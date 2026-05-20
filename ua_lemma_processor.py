@@ -73,6 +73,7 @@ def normalize_pos(pos_text):
         "сполучник": "conjunction",
         "прийменник": "preposition",
         "власна назва": "proper_noun",
+        "прикметник з прислівником": "adjective_with_adverb",
     }
 
     if pos_text not in allowed_pos:
