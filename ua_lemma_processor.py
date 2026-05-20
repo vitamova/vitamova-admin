@@ -4,6 +4,7 @@ import unicodedata
 from io import StringIO
 from pathlib import Path
 import psycopg2
+from datetime import datetime
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,6 +26,7 @@ conn = psycopg2.connect(
 cursor = conn.cursor()
 
 filepath = BASE_DIR / filename
+log_filepath = BASE_DIR / "ua_lemma_mismatches.log"
 
 
 class LemmaParseError(Exception):
@@ -132,16 +134,10 @@ def parse_tag(tag):
 inserted = 0
 skipped = 0
 
-with open(filepath, "r", encoding="utf-8-sig", newline="") as f:
+with open(filepath, "r", encoding="utf-8-sig", newline="") as f, \
+     open(log_filepath, "a", encoding="utf-8") as log_file:
+
     reader = csv.DictReader(f)
-
-    print("Detected columns:", [repr(name) for name in reader.fieldnames])
-
-    if "Word" not in reader.fieldnames:
-        raise ValueError(f"Expected column 'Word', got: {reader.fieldnames}")
-
-    if "tag" not in reader.fieldnames:
-        raise ValueError(f"Expected column 'tag', got: {reader.fieldnames}")
 
     for rank, row in enumerate(reader, start=1):
         word_from_csv = row["Word"].strip()
@@ -149,15 +145,24 @@ with open(filepath, "r", encoding="utf-8-sig", newline="") as f:
 
         lemma, pronunciation, pos = parse_tag(tag)
 
-        # Strict safety check: the word column should match the parsed pronunciation.
-        # If it doesn't, something about the file or parser is not what we expect.
         if word_from_csv != pronunciation:
-            print("OFFENDING TAG:")
-            print(tag)
-            raise LemmaParseError(
-                f"CSV word does not match parsed pronunciation. "
-                f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}"
+            log_file.write(
+                f"[{datetime.now().isoformat()}] "
+                f"rank={rank} | "
+                f"csv_word={word_from_csv!r} | "
+                f"parsed_pronunciation={pronunciation!r} | "
+                f"parsed_lemma={lemma!r} | "
+                f"pos={pos!r}\n"
             )
+            log_file.flush()
+
+            print(
+                f"Mismatch at rank {rank}: "
+                f"CSV Word={word_from_csv!r}, Parsed={pronunciation!r}. Skipping."
+            )
+
+            skipped += 1
+            continue
 
         cursor.execute(
             """
@@ -196,7 +201,8 @@ with open(filepath, "r", encoding="utf-8-sig", newline="") as f:
 conn.commit()
 
 print(f"Inserted {inserted} rows")
-print(f"Skipped {skipped} duplicate rows")
+print(f"Skipped {skipped} rows")
+print(f"Mismatches logged to: {log_filepath}")
 
 cursor.close()
 conn.close()
