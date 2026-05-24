@@ -22,7 +22,7 @@ def get_args():
 
     parser.add_argument("--db-host", default="vitamova-db.cluster-cartvcorpihi.us-east-1.rds.amazonaws.com")
     parser.add_argument("--db-port", default=5432, type=int)
-    parser.add_argument("--db-name", required=True)
+    parser.add_argument("--db-name", default="vitamova", required=True)
     parser.add_argument("--db-user", default="admin_app")
     parser.add_argument("--batch-size", default=25, type=int)
     parser.add_argument("--limit", default=None, type=int)
