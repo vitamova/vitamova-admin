@@ -139,7 +139,7 @@ def fetch_lemmas_for_level(cursor, level, count):
             FROM lemmas l
             JOIN lemma_translations lt
                 ON lt.lemma_id = l.id
-                AND lt.language = %s
+                AND lt.native_language = %s
             WHERE l.language = %s
               AND l.rank BETWEEN %s AND %s
               AND NOT EXISTS (
