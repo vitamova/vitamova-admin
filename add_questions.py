@@ -18,7 +18,10 @@ DB_USER = "admin_app"
 # This is not live user traffic, so quality matters more than ultra-low cost.
 MODEL = "gpt-5.1"
 
-TOTAL_QUESTIONS_TARGET = 1500
+TOTAL_QUESTIONS_TARGET = 3000
+TARGET_LANGUAGE = "es"
+TRANSLATION_LANGUAGE = "en"
+
 OPENAI_BATCH_SIZE = 5
 MAX_RETRIES = 4
 SLEEP_BETWEEN_OPENAI_CALLS = 0.5
@@ -34,7 +37,6 @@ LEVEL_RANGES = {
 
 
 def get_db_connection():
-
     return psycopg2.connect(
         host=DB_HOST,
         database=DB_NAME,
@@ -68,20 +70,26 @@ def get_existing_question_count_for_level(cursor, level):
     if max_rank is None:
         cursor.execute(
             """
-            SELECT COUNT(*)
-            FROM spanish_vocab_test_bank
-            WHERE lemma_rank >= %s
+            SELECT COUNT(DISTINCT l.id)
+            FROM vocab_test_bank q
+            JOIN lemmas l
+                ON l.id = q.lemma_id
+            WHERE l.language = %s
+              AND l.rank >= %s
             """,
-            [min_rank]
+            [TARGET_LANGUAGE, min_rank]
         )
     else:
         cursor.execute(
             """
-            SELECT COUNT(*)
-            FROM spanish_vocab_test_bank
-            WHERE lemma_rank BETWEEN %s AND %s
+            SELECT COUNT(DISTINCT l.id)
+            FROM vocab_test_bank q
+            JOIN lemmas l
+                ON l.id = q.lemma_id
+            WHERE l.language = %s
+              AND l.rank BETWEEN %s AND %s
             """,
-            [min_rank, max_rank]
+            [TARGET_LANGUAGE, min_rank, max_rank]
         )
 
     return cursor.fetchone()[0]
@@ -93,38 +101,58 @@ def fetch_lemmas_for_level(cursor, level, count):
     if max_rank is None:
         cursor.execute(
             """
-            SELECT sl.rank, sl.lemma, sl.pos, sl.translation, sl.definition
-            FROM spanish_lemmas sl
-            WHERE sl.rank >= %s
+            SELECT
+                l.id,
+                l.rank,
+                l.lemma,
+                l.pos,
+                lt.translation,
+                l.definition
+            FROM lemmas l
+            JOIN lemma_translations lt
+                ON lt.lemma_id = l.id
+                AND lt.language = %s
+            WHERE l.language = %s
+              AND l.rank >= %s
               AND NOT EXISTS (
                   SELECT 1
-                  FROM spanish_vocab_test_bank q
-                  WHERE q.lemma_rank = sl.rank
+                  FROM vocab_test_bank q
+                  WHERE q.lemma_id = l.id
               )
-              AND sl.translation IS NOT NULL
-              AND sl.definition IS NOT NULL
+              AND lt.translation IS NOT NULL
+              AND l.definition IS NOT NULL
             ORDER BY RANDOM()
             LIMIT %s
             """,
-            [min_rank, count]
+            [TRANSLATION_LANGUAGE, TARGET_LANGUAGE, min_rank, count]
         )
     else:
         cursor.execute(
             """
-            SELECT sl.rank, sl.lemma, sl.pos, sl.translation, sl.definition
-            FROM spanish_lemmas sl
-            WHERE sl.rank BETWEEN %s AND %s
+            SELECT
+                l.id,
+                l.rank,
+                l.lemma,
+                l.pos,
+                lt.translation,
+                l.definition
+            FROM lemmas l
+            JOIN lemma_translations lt
+                ON lt.lemma_id = l.id
+                AND lt.language = %s
+            WHERE l.language = %s
+              AND l.rank BETWEEN %s AND %s
               AND NOT EXISTS (
                   SELECT 1
-                  FROM spanish_vocab_test_bank q
-                  WHERE q.lemma_rank = sl.rank
+                  FROM vocab_test_bank q
+                  WHERE q.lemma_id = l.id
               )
-              AND sl.translation IS NOT NULL
-              AND sl.definition IS NOT NULL
+              AND lt.translation IS NOT NULL
+              AND l.definition IS NOT NULL
             ORDER BY RANDOM()
             LIMIT %s
             """,
-            [min_rank, max_rank, count]
+            [TRANSLATION_LANGUAGE, TARGET_LANGUAGE, min_rank, max_rank, count]
         )
 
     return cursor.fetchall()
@@ -133,8 +161,9 @@ def fetch_lemmas_for_level(cursor, level, count):
 def build_prompt(lemma_rows):
     input_items = []
 
-    for rank, lemma, pos, translation, definition in lemma_rows:
+    for lemma_id, rank, lemma, pos, translation, definition in lemma_rows:
         input_items.append({
+            "lemma_id": lemma_id,
             "lemma_rank": rank,
             "lemma": lemma,
             "part_of_speech": pos,
@@ -225,6 +254,7 @@ Output requirements:
 - "results" must be an array.
 - Return exactly one result for each input lemma.
 - Each object inside "results" must include:
+  - lemma_id
   - lemma_rank
   - question
   - correct_answer
@@ -241,11 +271,12 @@ Input lemmas:
 """
 
 
-def validate_generated_questions(results, expected_ranks):
+def validate_generated_questions(results, expected_lemma_ids):
     if not isinstance(results, list):
         raise ValueError("OpenAI response results was not a list.")
 
     required_fields = [
+        "lemma_id",
         "lemma_rank",
         "question",
         "correct_answer",
@@ -255,7 +286,7 @@ def validate_generated_questions(results, expected_ranks):
         "ambiguity_check",
     ]
 
-    returned_ranks = set()
+    returned_lemma_ids = set()
 
     for item in results:
         for field in required_fields:
@@ -265,8 +296,10 @@ def validate_generated_questions(results, expected_ranks):
             if item[field] is None or str(item[field]).strip() == "":
                 raise ValueError(f"Empty field: {field}")
 
+        lemma_id = int(item["lemma_id"])
         lemma_rank = int(item["lemma_rank"])
-        returned_ranks.add(lemma_rank)
+
+        returned_lemma_ids.add(lemma_id)
 
         question = str(item["question"]).strip()
         correct_answer = str(item["correct_answer"]).strip()
@@ -276,13 +309,13 @@ def validate_generated_questions(results, expected_ranks):
         ambiguity_check = str(item["ambiguity_check"]).strip()
 
         if "_____" not in question:
-            raise ValueError(f"Question for rank {lemma_rank} does not include _____.")
+            raise ValueError(f"Question for lemma_id {lemma_id} does not include _____.")
 
         if question.count("_____") != 1:
-            raise ValueError(f"Question for rank {lemma_rank} does not have exactly one blank.")
+            raise ValueError(f"Question for lemma_id {lemma_id} does not have exactly one blank.")
 
         if correct_answer.casefold() in question.casefold():
-            raise ValueError(f"Question for rank {lemma_rank} appears to contain the correct answer.")
+            raise ValueError(f"Question for lemma_id {lemma_id} appears to contain the correct answer.")
 
         options = [
             correct_answer,
@@ -297,9 +330,8 @@ def validate_generated_questions(results, expected_ranks):
         ]
 
         if len(set(normalized_options)) != 4:
-            raise ValueError(f"Duplicate answer options for rank {lemma_rank}.")
+            raise ValueError(f"Duplicate answer options for lemma_id {lemma_id}.")
 
-        # Reject obviously self-reported ambiguity.
         bad_ambiguity_phrases = [
             "more than one",
             "multiple",
@@ -318,28 +350,27 @@ def validate_generated_questions(results, expected_ranks):
         for phrase in bad_ambiguity_phrases:
             if phrase in ambiguity_lower:
                 raise ValueError(
-                    f"Ambiguity check for rank {lemma_rank} suggests the item may be ambiguous: {ambiguity_check}"
+                    f"Ambiguity check for lemma_id {lemma_id}, rank {lemma_rank}, suggests the item may be ambiguous: {ambiguity_check}"
                 )
 
-        # Simple local sanity checks for Spanish fill-in-the-blank quality.
         if len(question.split()) < 5:
-            raise ValueError(f"Question for rank {lemma_rank} is too short.")
+            raise ValueError(f"Question for lemma_id {lemma_id} is too short.")
 
         if len(correct_answer.split()) > 4:
-            raise ValueError(f"Correct answer for rank {lemma_rank} is too long.")
+            raise ValueError(f"Correct answer for lemma_id {lemma_id} is too long.")
 
         for option in options:
             if len(option.split()) > 4:
-                raise ValueError(f"Option for rank {lemma_rank} is too long: {option}")
+                raise ValueError(f"Option for lemma_id {lemma_id} is too long: {option}")
 
-    missing_ranks = expected_ranks - returned_ranks
-    unexpected_ranks = returned_ranks - expected_ranks
+    missing_lemma_ids = expected_lemma_ids - returned_lemma_ids
+    unexpected_lemma_ids = returned_lemma_ids - expected_lemma_ids
 
-    if missing_ranks:
-        raise ValueError(f"Missing lemma ranks: {sorted(missing_ranks)}")
+    if missing_lemma_ids:
+        raise ValueError(f"Missing lemma IDs: {sorted(missing_lemma_ids)}")
 
-    if unexpected_ranks:
-        raise ValueError(f"Unexpected lemma ranks: {sorted(unexpected_ranks)}")
+    if unexpected_lemma_ids:
+        raise ValueError(f"Unexpected lemma IDs: {sorted(unexpected_lemma_ids)}")
 
 
 def build_review_prompt(generated_questions):
@@ -360,6 +391,7 @@ Output format:
 {{
   "reviews": [
     {{
+      "lemma_id": 123,
       "lemma_rank": 123,
       "is_valid": true,
       "reason": "Only the correct answer fits because..."
@@ -376,7 +408,7 @@ def review_questions_with_openai(client, generated_questions):
     if not generated_questions:
         return []
 
-    expected_ranks = {int(item["lemma_rank"]) for item in generated_questions}
+    expected_lemma_ids = {int(item["lemma_id"]) for item in generated_questions}
     prompt = build_review_prompt(generated_questions)
 
     response = client.responses.create(
@@ -394,11 +426,13 @@ def review_questions_with_openai(client, generated_questions):
                             "items": {
                                 "type": "object",
                                 "properties": {
+                                    "lemma_id": {"type": "integer"},
                                     "lemma_rank": {"type": "integer"},
                                     "is_valid": {"type": "boolean"},
                                     "reason": {"type": "string"},
                                 },
                                 "required": [
+                                    "lemma_id",
                                     "lemma_rank",
                                     "is_valid",
                                     "reason",
@@ -417,38 +451,39 @@ def review_questions_with_openai(client, generated_questions):
     parsed = json.loads(response.output_text)
     reviews = parsed["reviews"]
 
-    returned_ranks = {int(item["lemma_rank"]) for item in reviews}
+    returned_lemma_ids = {int(item["lemma_id"]) for item in reviews}
 
-    missing_ranks = expected_ranks - returned_ranks
-    unexpected_ranks = returned_ranks - expected_ranks
+    missing_lemma_ids = expected_lemma_ids - returned_lemma_ids
+    unexpected_lemma_ids = returned_lemma_ids - expected_lemma_ids
 
-    if missing_ranks:
-        raise ValueError(f"Review response missing lemma ranks: {sorted(missing_ranks)}")
+    if missing_lemma_ids:
+        raise ValueError(f"Review response missing lemma IDs: {sorted(missing_lemma_ids)}")
 
-    if unexpected_ranks:
-        raise ValueError(f"Review response included unexpected lemma ranks: {sorted(unexpected_ranks)}")
+    if unexpected_lemma_ids:
+        raise ValueError(f"Review response included unexpected lemma IDs: {sorted(unexpected_lemma_ids)}")
 
     review_lookup = {
-        int(item["lemma_rank"]): item
+        int(item["lemma_id"]): item
         for item in reviews
     }
 
     valid_questions = []
 
     for question in generated_questions:
+        lemma_id = int(question["lemma_id"])
         lemma_rank = int(question["lemma_rank"])
-        review = review_lookup[lemma_rank]
+        review = review_lookup[lemma_id]
 
         if review["is_valid"]:
             valid_questions.append(question)
         else:
-            print(f"Rejected rank {lemma_rank}: {review['reason']}")
+            print(f"Rejected lemma_id {lemma_id}, rank {lemma_rank}: {review['reason']}")
 
     return valid_questions
 
 
 def generate_questions_with_openai(client, lemma_rows):
-    expected_ranks = {int(row[0]) for row in lemma_rows}
+    expected_lemma_ids = {int(row[0]) for row in lemma_rows}
     prompt = build_prompt(lemma_rows)
 
     last_error = None
@@ -470,6 +505,7 @@ def generate_questions_with_openai(client, lemma_rows):
                                     "items": {
                                         "type": "object",
                                         "properties": {
+                                            "lemma_id": {"type": "integer"},
                                             "lemma_rank": {"type": "integer"},
                                             "question": {"type": "string"},
                                             "correct_answer": {"type": "string"},
@@ -479,6 +515,7 @@ def generate_questions_with_openai(client, lemma_rows):
                                             "ambiguity_check": {"type": "string"},
                                         },
                                         "required": [
+                                            "lemma_id",
                                             "lemma_rank",
                                             "question",
                                             "correct_answer",
@@ -501,7 +538,7 @@ def generate_questions_with_openai(client, lemma_rows):
             parsed = json.loads(response.output_text)
             results = parsed["results"]
 
-            validate_generated_questions(results, expected_ranks)
+            validate_generated_questions(results, expected_lemma_ids)
 
             reviewed_results = review_questions_with_openai(client, results)
 
@@ -509,11 +546,11 @@ def generate_questions_with_openai(client, lemma_rows):
                 rejected_count = len(results) - len(reviewed_results)
                 raise ValueError(f"Review rejected {rejected_count} generated question(s). Retrying batch.")
 
-            # The DB table does not have ambiguity_check, so strip it before insert.
             cleaned_results = []
 
             for item in reviewed_results:
                 cleaned_results.append({
+                    "lemma_id": item["lemma_id"],
                     "lemma_rank": item["lemma_rank"],
                     "question": item["question"],
                     "correct_answer": item["correct_answer"],
@@ -546,8 +583,8 @@ def insert_questions(cursor, generated_questions):
     for item in generated_questions:
         cursor.execute(
             """
-            INSERT INTO spanish_vocab_test_bank (
-                lemma_rank,
+            INSERT INTO vocab_test_bank (
+                lemma_id,
                 question,
                 correct_answer,
                 distractor_1,
@@ -557,7 +594,7 @@ def insert_questions(cursor, generated_questions):
             VALUES (%s, %s, %s, %s, %s, %s)
             """,
             [
-                item["lemma_rank"],
+                item["lemma_id"],
                 item["question"],
                 item["correct_answer"],
                 item["distractor_1"],
@@ -584,6 +621,9 @@ def main():
     targets = get_level_targets(TOTAL_QUESTIONS_TARGET)
 
     print("Question generation target:")
+    print(f"Target language: {TARGET_LANGUAGE}")
+    print(f"Translation language: {TRANSLATION_LANGUAGE}")
+
     for level, target in targets.items():
         print(f"  Level {level}: {target}")
 
