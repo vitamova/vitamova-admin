@@ -18,8 +18,9 @@ DB_USER = "admin_app"
 # This is not live user traffic, so quality matters more than ultra-low cost.
 MODEL = "gpt-5.1"
 
-TOTAL_QUESTIONS_TARGET = 3000
-TARGET_LANGUAGE = "es"
+TOTAL_QUESTIONS_TARGET = 1500
+TARGET_LANGUAGE = "pt"
+TARGET_LANGUAGE_NAME = "Portuguese"
 TRANSLATION_LANGUAGE = "en"
 
 OPENAI_BATCH_SIZE = 5
@@ -168,13 +169,13 @@ def build_prompt(lemma_rows):
             "lemma": lemma,
             "part_of_speech": pos,
             "translation_en": translation,
-            "definition_es": definition,
+            "definition": definition,
         })
 
     return f"""
-You are creating high-quality Spanish vocabulary diagnostic questions for intermediate and advanced learners.
+You are creating high-quality {TARGET_LANGUAGE_NAME} vocabulary diagnostic questions for intermediate and advanced learners.
 
-For each Spanish lemma, create one multiple-choice fill-in-the-blank question entirely in Spanish.
+For each {TARGET_LANGUAGE_NAME} lemma, create one multiple-choice fill-in-the-blank question entirely in {TARGET_LANGUAGE_NAME}.
 
 The most important requirement:
 - Exactly one answer option must be clearly and naturally correct.
@@ -182,7 +183,7 @@ The most important requirement:
 - If more than one option could naturally fit the blank, the question is invalid and must be rewritten.
 
 Question design rules:
-- The question must be a natural Spanish sentence with exactly one blank.
+- The question must be a natural {TARGET_LANGUAGE_NAME} sentence with exactly one blank.
 - Write the blank exactly as _____.
 - The sentence must include a semantic clue that points uniquely to the correct answer.
 - Do not write generic sentences where many options could fit.
@@ -194,7 +195,7 @@ Question design rules:
 - Do not include English anywhere in the question or answer options.
 - Keep the sentence short, natural, and clear.
 - Prefer everyday contexts, but make the clue strong enough to remove ambiguity.
-- The correct_answer must be the target Spanish lemma, or the most natural inflected form if the sentence requires inflection.
+- The correct_answer must be the target {TARGET_LANGUAGE_NAME} lemma, or the most natural inflected form if the sentence requires inflection.
 
 Inflection and form variety:
 - When the target lemma is a verb, adjective, noun, pronoun, determiner, or other word type with multiple natural forms, use the form that best fits the sentence.
@@ -263,7 +264,7 @@ Output requirements:
   - distractor_3
   - ambiguity_check
 
-The ambiguity_check field must be a short Spanish or English explanation of why only the correct answer fits naturally.
+The ambiguity_check field must be a short {TARGET_LANGUAGE_NAME} or English explanation of why only the correct answer fits naturally.
 Do not include any markdown.
 
 Input lemmas:
@@ -338,11 +339,11 @@ def validate_generated_questions(results, expected_lemma_ids):
             "ambiguous",
             "could fit",
             "also fits",
-            "también encaja",
-            "más de una",
-            "varias opciones",
-            "ambiguo",
-            "ambigua",
+            f"também se encaixa",
+            f"mais de uma",
+            f"várias opções",
+            f"ambíguo",
+            f"ambígua",
         ]
 
         ambiguity_lower = ambiguity_check.casefold()
@@ -375,7 +376,7 @@ def validate_generated_questions(results, expected_lemma_ids):
 
 def build_review_prompt(generated_questions):
     return f"""
-You are reviewing Spanish fill-in-the-blank vocabulary diagnostic questions.
+You are reviewing {TARGET_LANGUAGE_NAME} fill-in-the-blank vocabulary diagnostic questions.
 
 Your task:
 - Identify whether each question has exactly one clearly correct answer.
