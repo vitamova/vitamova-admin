@@ -18,23 +18,21 @@ DB_USER = "admin_app"
 # This is not live user traffic, so quality matters more than ultra-low cost.
 MODEL = "gpt-5.1"
 
-TOTAL_QUESTIONS_TARGET = 1500
-TARGET_LANGUAGE = "pt"
-TARGET_LANGUAGE_NAME = "Portuguese"
+# Target: create this many total questions inside the selected rank range.
+TOTAL_QUESTIONS_TARGET = 1000
+
+# Rank range to fill.
+# Example: 3001-4000 creates questions only for lemmas in that rank range.
+MIN_RANK = 3001
+MAX_RANK = 4000
+
+TARGET_LANGUAGE = "es"
+TARGET_LANGUAGE_NAME = "Spanish"
 TRANSLATION_LANGUAGE = "en"
 
 OPENAI_BATCH_SIZE = 5
 MAX_RETRIES = 4
 SLEEP_BETWEEN_OPENAI_CALLS = 0.5
-
-LEVEL_RANGES = {
-    1: (1, 1500),
-    2: (1501, 3000),
-    3: (3001, 6000),
-    4: (6001, 10000),
-    5: (10001, 15000),
-    6: (15001, None),
-}
 
 
 def get_db_connection():
@@ -50,111 +48,72 @@ def get_openai_client():
     return OpenAI(api_key=OPENAI_KEY)
 
 
-def get_level_targets(total_questions):
-    base = total_questions // 6
-    remainder = total_questions % 6
+def get_existing_question_count_in_range(cursor):
+    sql = """
+        SELECT COUNT(DISTINCT l.id)
+        FROM vocab_test_bank q
+        JOIN lemmas l
+            ON l.id = q.lemma_id
+        WHERE l.language = %s
+          AND l.rank >= %s
+    """
 
-    targets = {}
+    params = [
+        TARGET_LANGUAGE,
+        MIN_RANK
+    ]
 
-    for level in range(1, 7):
-        targets[level] = base
+    if MAX_RANK is not None:
+        sql += " AND l.rank <= %s"
+        params.append(MAX_RANK)
 
-    for level in range(1, remainder + 1):
-        targets[level] += 1
-
-    return targets
-
-
-def get_existing_question_count_for_level(cursor, level):
-    min_rank, max_rank = LEVEL_RANGES[level]
-
-    if max_rank is None:
-        cursor.execute(
-            """
-            SELECT COUNT(DISTINCT l.id)
-            FROM vocab_test_bank q
-            JOIN lemmas l
-                ON l.id = q.lemma_id
-            WHERE l.language = %s
-              AND l.rank >= %s
-            """,
-            [TARGET_LANGUAGE, min_rank]
-        )
-    else:
-        cursor.execute(
-            """
-            SELECT COUNT(DISTINCT l.id)
-            FROM vocab_test_bank q
-            JOIN lemmas l
-                ON l.id = q.lemma_id
-            WHERE l.language = %s
-              AND l.rank BETWEEN %s AND %s
-            """,
-            [TARGET_LANGUAGE, min_rank, max_rank]
-        )
+    cursor.execute(sql, params)
 
     return cursor.fetchone()[0]
 
 
-def fetch_lemmas_for_level(cursor, level, count):
-    min_rank, max_rank = LEVEL_RANGES[level]
+def fetch_lemmas_in_range(cursor, count):
+    sql = """
+        SELECT
+            l.id,
+            l.rank,
+            l.lemma,
+            l.pos,
+            lt.translation,
+            l.definition
+        FROM lemmas l
+        JOIN lemma_translations lt
+            ON lt.lemma_id = l.id
+            AND lt.native_language = %s
+        WHERE l.language = %s
+          AND l.rank >= %s
+          AND NOT EXISTS (
+              SELECT 1
+              FROM vocab_test_bank q
+              WHERE q.lemma_id = l.id
+          )
+          AND lt.translation IS NOT NULL
+          AND l.definition IS NOT NULL
+    """
 
-    if max_rank is None:
-        cursor.execute(
-            """
-            SELECT
-                l.id,
-                l.rank,
-                l.lemma,
-                l.pos,
-                lt.translation,
-                l.definition
-            FROM lemmas l
-            JOIN lemma_translations lt
-                ON lt.lemma_id = l.id
-                AND lt.native_language = %s
-            WHERE l.language = %s
-              AND l.rank >= %s
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM vocab_test_bank q
-                  WHERE q.lemma_id = l.id
-              )
-              AND lt.translation IS NOT NULL
-              AND l.definition IS NOT NULL
-            ORDER BY RANDOM()
-            LIMIT %s
-            """,
-            [TRANSLATION_LANGUAGE, TARGET_LANGUAGE, min_rank, count]
-        )
-    else:
-        cursor.execute(
-            """
-            SELECT
-                l.id,
-                l.rank,
-                l.lemma,
-                l.pos,
-                lt.translation,
-                l.definition
-            FROM lemmas l
-            JOIN lemma_translations lt
-                ON lt.lemma_id = l.id
-                AND lt.native_language = %s
-            WHERE l.language = %s
-              AND l.rank BETWEEN %s AND %s
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM vocab_test_bank q
-                  WHERE q.lemma_id = l.id
-              )
-              AND lt.translation IS NOT NULL
-              AND l.definition IS NOT NULL
-            ORDER BY RANDOM()
-            LIMIT %s
-            """,
-            [TRANSLATION_LANGUAGE, TARGET_LANGUAGE, min_rank, max_rank, count]
-        )
+    params = [
+        TRANSLATION_LANGUAGE,
+        TARGET_LANGUAGE,
+        MIN_RANK
+    ]
+
+    if MAX_RANK is not None:
+        sql += " AND l.rank <= %s"
+        params.append(MAX_RANK)
+
+    sql += """
+        ORDER BY RANDOM()
+        LIMIT %s
+    """
+
+    params.append(count)
+
+    cursor.execute(sql, params)
 
     return cursor.fetchall()
 
@@ -200,12 +159,12 @@ Question design rules:
 Inflection and form variety:
 - When the target lemma is a verb, adjective, noun, pronoun, determiner, or other word type with multiple natural forms, use the form that best fits the sentence.
 - Do not always use the dictionary form of the lemma.
-- For verbs, prefer natural conjugated forms when appropriate. For example, the lemma "ser" should sometimes appear as "es", "soy", "son", "era", "fue", etc., depending on the sentence.
-- For nouns and adjectives, use natural gender and number forms when appropriate. For example, a lemma may appear in singular, plural, masculine, or feminine form if the sentence calls for it.
+- For verbs, prefer natural conjugated forms when appropriate.
+- For nouns and adjectives, use natural gender and number forms when appropriate.
 - For very common lemmas, especially verbs, avoid overusing the infinitive form unless the sentence naturally requires an infinitive.
 - The correct_answer should be the exact form that belongs in the blank, not necessarily the lemma itself.
 - The question should still test knowledge of the target lemma, even when the answer is an inflected form.
-- Distractors should match the general grammatical shape of the correct answer when possible, but they must be wrong in meaning. For example, if the correct answer is a conjugated verb, the distractors should often also be conjugated verbs.
+- Distractors should match the general grammatical shape of the correct answer when possible, but they must be wrong in meaning.
 
 Before finalizing each item, mentally test all four options in the blank:
 1. Put the correct answer into the blank.
@@ -339,11 +298,11 @@ def validate_generated_questions(results, expected_lemma_ids):
             "ambiguous",
             "could fit",
             "also fits",
-            f"também se encaixa",
-            f"mais de uma",
-            f"várias opções",
-            f"ambíguo",
-            f"ambígua",
+            "também se encaixa",
+            "mais de uma",
+            "várias opções",
+            "ambíguo",
+            "ambígua",
         ]
 
         ambiguity_lower = ambiguity_check.casefold()
@@ -409,7 +368,11 @@ def review_questions_with_openai(client, generated_questions):
     if not generated_questions:
         return []
 
-    expected_lemma_ids = {int(item["lemma_id"]) for item in generated_questions}
+    expected_lemma_ids = {
+        int(item["lemma_id"])
+        for item in generated_questions
+    }
+
     prompt = build_review_prompt(generated_questions)
 
     response = client.responses.create(
@@ -452,7 +415,10 @@ def review_questions_with_openai(client, generated_questions):
     parsed = json.loads(response.output_text)
     reviews = parsed["reviews"]
 
-    returned_lemma_ids = {int(item["lemma_id"]) for item in reviews}
+    returned_lemma_ids = {
+        int(item["lemma_id"])
+        for item in reviews
+    }
 
     missing_lemma_ids = expected_lemma_ids - returned_lemma_ids
     unexpected_lemma_ids = returned_lemma_ids - expected_lemma_ids
@@ -484,7 +450,11 @@ def review_questions_with_openai(client, generated_questions):
 
 
 def generate_questions_with_openai(client, lemma_rows):
-    expected_lemma_ids = {int(row[0]) for row in lemma_rows}
+    expected_lemma_ids = {
+        int(row[0])
+        for row in lemma_rows
+    }
+
     prompt = build_prompt(lemma_rows)
 
     last_error = None
@@ -539,9 +509,15 @@ def generate_questions_with_openai(client, lemma_rows):
             parsed = json.loads(response.output_text)
             results = parsed["results"]
 
-            validate_generated_questions(results, expected_lemma_ids)
+            validate_generated_questions(
+                results,
+                expected_lemma_ids
+            )
 
-            reviewed_results = review_questions_with_openai(client, results)
+            reviewed_results = review_questions_with_openai(
+                client,
+                results
+            )
 
             if len(reviewed_results) != len(results):
                 rejected_count = len(results) - len(reviewed_results)
@@ -609,84 +585,80 @@ def insert_questions(cursor, generated_questions):
     return inserted_count
 
 
-def chunk_list(items, chunk_size):
-    for i in range(0, len(items), chunk_size):
-        yield items[i:i + chunk_size]
-
-
 def main():
     client = get_openai_client()
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    targets = get_level_targets(TOTAL_QUESTIONS_TARGET)
-
     print("Question generation target:")
     print(f"Target language: {TARGET_LANGUAGE}")
     print(f"Translation language: {TRANSLATION_LANGUAGE}")
-
-    for level, target in targets.items():
-        print(f"  Level {level}: {target}")
+    print(f"Rank range: {MIN_RANK} to {MAX_RANK if MAX_RANK is not None else 'open-ended'}")
+    print(f"Target questions in range: {TOTAL_QUESTIONS_TARGET}")
 
     total_inserted = 0
 
     try:
-        for level in range(1, 7):
-            target_for_level = targets[level]
-            existing_count = get_existing_question_count_for_level(cursor, level)
-            remaining_for_level = max(target_for_level - existing_count, 0)
+        while True:
+            existing_count = get_existing_question_count_in_range(cursor)
+            remaining = max(TOTAL_QUESTIONS_TARGET - existing_count, 0)
 
             print("\n----------------------------------------")
-            print(f"Level {level}")
-            print(f"Target: {target_for_level}")
-            print(f"Existing questions: {existing_count}")
-            print(f"Need to generate: {remaining_for_level}")
+            print(f"Existing questions in range: {existing_count}")
+            print(f"Remaining needed: {remaining}")
 
-            if remaining_for_level == 0:
-                continue
+            if remaining == 0:
+                print("Target reached.")
+                break
 
-            lemma_rows = fetch_lemmas_for_level(
+            fetch_count = min(
+                remaining,
+                OPENAI_BATCH_SIZE
+            )
+
+            lemma_rows = fetch_lemmas_in_range(
                 cursor=cursor,
-                level=level,
-                count=remaining_for_level
+                count=fetch_count
             )
 
             if not lemma_rows:
-                print(f"No eligible lemmas found for level {level}. Skipping.")
-                continue
+                print("No eligible lemmas found in target range. Stopping.")
+                break
 
-            print(f"Fetched {len(lemma_rows)} lemmas for level {level}.")
+            print(f"Fetched {len(lemma_rows)} eligible lemmas.")
 
-            for batch_number, lemma_batch in enumerate(chunk_list(lemma_rows, OPENAI_BATCH_SIZE), start=1):
-                print(
-                    f"Level {level}, batch {batch_number}: "
-                    f"generating {len(lemma_batch)} questions..."
+            try:
+                generated_questions = generate_questions_with_openai(
+                    client,
+                    lemma_rows
                 )
 
-                try:
-                    generated_questions = generate_questions_with_openai(client, lemma_batch)
+                inserted_count = insert_questions(
+                    cursor,
+                    generated_questions
+                )
 
-                    inserted_count = insert_questions(cursor, generated_questions)
-                    conn.commit()
+                conn.commit()
 
-                    total_inserted += inserted_count
+                total_inserted += inserted_count
 
-                    print(
-                        f"Committed {inserted_count} questions. "
-                        f"Total inserted this run: {total_inserted}"
-                    )
+                print(
+                    f"Committed {inserted_count} questions. "
+                    f"Total inserted this run: {total_inserted}"
+                )
 
-                    time.sleep(SLEEP_BETWEEN_OPENAI_CALLS)
+                time.sleep(SLEEP_BETWEEN_OPENAI_CALLS)
 
-                except Exception as e:
-                    conn.rollback()
+            except Exception as e:
+                conn.rollback()
 
-                    print("\nFailed to generate/review/insert this batch. Rolled back this batch only.")
-                    print("Continuing to next batch.")
-                    print("Error:", e)
-                    traceback.print_exc()
+                print("\nFailed to generate/review/insert this batch. Rolled back this batch only.")
+                print("Continuing with another batch.")
+                print("Error:", e)
+                traceback.print_exc()
 
-                    continue
+                time.sleep(SLEEP_BETWEEN_OPENAI_CALLS)
+                continue
 
         print("\nDone.")
         print(f"Total inserted this run: {total_inserted}")
