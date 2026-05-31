@@ -19,12 +19,12 @@ DB_USER = "admin_app"
 MODEL = "gpt-5.1"
 
 # Target: create this many total questions inside the selected rank range.
-TOTAL_QUESTIONS_TARGET = 1000
+TOTAL_QUESTIONS_TARGET = 950
 
 # Rank range to fill.
 # Example: 3001-4000 creates questions only for lemmas in that rank range.
-MIN_RANK = 3001
-MAX_RANK = 4000
+MIN_RANK = 4001
+MAX_RANK = 5000
 
 TARGET_LANGUAGE = "es"
 TARGET_LANGUAGE_NAME = "Spanish"
