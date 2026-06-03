@@ -23,8 +23,8 @@ TOTAL_QUESTIONS_TARGET = 950
 
 # Rank range to fill.
 # Example: 3001-4000 creates questions only for lemmas in that rank range.
-MIN_RANK = 4001
-MAX_RANK = 5000
+MIN_RANK = 5001
+MAX_RANK = 6000
 
 TARGET_LANGUAGE = "es"
 TARGET_LANGUAGE_NAME = "Spanish"
