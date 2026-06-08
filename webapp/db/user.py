@@ -13,8 +13,8 @@ class User:
     def count_by_hours(self,hours):
         self.cursor.execute(
             """
-            SELECT COUNT(*) FROM users
-            WHERE last_login >= NOW() - INTERVAL '%s hours'
+            SELECT COUNT(*) FROM auth_user
+            WHERE date_joined >= NOW() - INTERVAL '%s hours'
             """,
             (hours,)
         )
@@ -22,8 +22,8 @@ class User:
     def count_by_days(self,days):
         self.cursor.execute(
             """
-            SELECT COUNT(*) FROM users
-            WHERE last_login >= NOW() - INTERVAL '%s days'
+            SELECT COUNT(*) FROM auth_user
+            WHERE date_joined >= NOW() - INTERVAL '%s days'
             """,
             (days,)
         )
