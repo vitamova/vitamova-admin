@@ -42,19 +42,6 @@ class SentenceCandidate(BaseModel):
             "This must appear verbatim in the sentence."
         )
     )
-    gender: Optional[str] = Field(
-        default=None,
-        description=(
-            "Grammatical gender of the exact word form when applicable. "
-            "Use a concise label appropriate for the target language; otherwise null."
-        )
-    )
-    form: str = Field(
-        description=(
-            "A concise description of the exact morphological form used, such as "
-            "plural, first-person singular present, feminine singular, past tense, etc."
-        )
-    )
 
 
 class ReviewResult(BaseModel):
@@ -70,11 +57,6 @@ class ReviewResult(BaseModel):
         )
     )
     word: str = Field(description="The exact surface form used in the approved/revised sentence.")
-    gender: Optional[str] = Field(
-        default=None,
-        description="Correct grammatical gender when applicable; otherwise null."
-    )
-    form: str = Field(description="Correct description of the surface word's morphological form.")
 
 
 LANGUAGE_NAMES = {
@@ -152,14 +134,11 @@ def validate_candidate(
 
     sentence = candidate.sentence.strip()
     word = candidate.word.strip()
-    form = candidate.form.strip()
 
     if not sentence:
         errors.append("The sentence is empty.")
     if not word:
         errors.append("The exact surface word is empty.")
-    if not form:
-        errors.append("The morphological form is empty.")
 
     if sentence and word and not contains_exact_word(sentence, word):
         errors.append(
@@ -224,10 +203,9 @@ Requirements:
    the language and context allow it.
 9. {ARTICLE_GUIDANCE[language]}
 10. Return the exact surface word appearing in the sentence in the `word` field.
-11. Return accurate `gender` and `form` metadata for that exact surface form.
-12. Keep the sentence understandable and useful to an intermediate learner.
-13. Do not use quotation marks merely to mention the word.
-14. Do not include translations, explanations, or extra sentences.
+11. Keep the sentence understandable and useful to an intermediate learner.
+12. Do not use quotation marks merely to mention the word.
+13. Do not include translations, explanations, or extra sentences.
 {feedback_text}
 """.strip()
 
@@ -271,8 +249,6 @@ DICTIONARY DEFINITION: {lemma_row.get("definition") or "not provided"}
 
 PROPOSED SENTENCE: {candidate.sentence}
 PROPOSED EXACT WORD: {candidate.word}
-PROPOSED GENDER: {candidate.gender}
-PROPOSED FORM: {candidate.form}
 
 Approval requirements:
 
@@ -287,12 +263,11 @@ Approval requirements:
 8. If the lemma is a verb, reject an unnecessary infinitive/lemma form and revise
    it into a natural conjugated form.
 9. {ARTICLE_GUIDANCE[language]}
-10. The `gender` and `form` fields must accurately describe the exact surface word.
-11. The output must contain one sentence only and no translation or explanation.
+10. The output must contain one sentence only and no translation or explanation.
 
 If every requirement is met, set approved=true and return the candidate unchanged.
 If anything can be repaired, set approved=false, list the issues, and return a fully
-corrected sentence, exact word, gender, and form in the remaining fields.
+corrected sentence and exact word in the remaining fields.
 Do not merely criticize the candidate; always supply the best corrected version.
 """.strip()
 
@@ -371,22 +346,20 @@ def get_or_create_word(
     lemma_id: int,
     language: str,
     word: str,
-    gender: Optional[str],
-    form: str,
 ) -> int:
     cursor.execute(
         """
         SELECT id
         FROM words
         WHERE lemma_id = %s
-          AND language = %s
-          AND word = %s
-          AND form IS NOT DISTINCT FROM %s
-          AND gender IS NOT DISTINCT FROM %s
+        AND language = %s
+        AND word = %s
+        AND form IS NULL
+        AND gender IS NULL
         ORDER BY id
         LIMIT 1
         """,
-        [lemma_id, language, word, form, gender],
+        [lemma_id, language, word],
     )
 
     row = cursor.fetchone()
@@ -402,12 +375,11 @@ def get_or_create_word(
             language,
             lemma_id
         )
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s, NULL, NULL, %s, %s)
         RETURNING id
         """,
-        [word, gender, form, language, lemma_id],
+        [word, language, lemma_id],
     )
-
     return cursor.fetchone()[0]
 
 
@@ -440,8 +412,6 @@ def insert_sentence_and_word(
             lemma_id=lemma_row["id"],
             language=lemma_row["language"],
             word=reviewed.word.strip(),
-            gender=reviewed.gender.strip() if reviewed.gender else None,
-            form=reviewed.form.strip(),
         )
 
         cursor.execute(
@@ -575,8 +545,6 @@ def main() -> None:
                                 "word_id": word_id,
                                 "sentence": review.sentence,
                                 "word": review.word,
-                                "gender": review.gender,
-                                "form": review.form,
                                 "reviewer_approved_original": review.approved,
                                 "reviewer_issues": review.issues,
                             },
