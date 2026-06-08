@@ -2,8 +2,6 @@
 
 set -e
 
-export PYTHONPATH="$HOME/vitamova-admin:$PYTHONPATH"
-
 echo "=== Restarting Vitamova Admin web service ==="
 
 # Step 1: Kill Gunicorn if it's running
@@ -46,7 +44,6 @@ echo "✅ Python dependencies installed."
 # Step 6: Apply the django migrations
 echo "🔄 Applying Django migrations..."
 source ~/vitamova-admin-venv/bin/activate
-export PYTHONPATH="$HOME/vitamova-admin:$PYTHONPATH"
 cd ~/vitamova-admin/webapp
 python3 manage.py migrate
 if [ $? -ne 0 ]; then
@@ -59,7 +56,6 @@ echo "✅ Migrations applied successfully."
 
 # Step 7: Start services
 echo "🚀 Starting Vitamova services..."
-export PYTHONPATH="$HOME/vitamova-admin:$PYTHONPATH"
 if bash ~/vitamova-admin/deploy/start-services.sh; then
   echo "✅ Vitamova services started successfully."
 else
