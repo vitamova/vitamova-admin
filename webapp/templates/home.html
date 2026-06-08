@@ -261,6 +261,155 @@
             line-height: 1.45;
         }
 
+
+        .section-block {
+            margin-top: 24px;
+        }
+
+        .section-heading {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 14px;
+        }
+
+        .section-heading h2 {
+            margin: 0;
+            font-size: 1.35rem;
+            letter-spacing: -0.03em;
+        }
+
+        .section-heading p {
+            margin: 5px 0 0;
+            color: var(--admin-muted);
+            font-size: 0.9rem;
+        }
+
+        .users-panel {
+            overflow: hidden;
+            border: 1px solid var(--admin-border);
+            border-radius: 24px;
+            background: var(--admin-surface);
+            box-shadow: 0 12px 34px rgba(16, 24, 40, 0.07);
+        }
+
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .users-table th,
+        .users-table td {
+            padding: 16px 18px;
+            text-align: left;
+            border-bottom: 1px solid var(--admin-border);
+        }
+
+        .users-table th {
+            background: #f8fafc;
+            color: var(--admin-muted);
+            font-size: 0.74rem;
+            font-weight: 900;
+            letter-spacing: 0.09em;
+            text-transform: uppercase;
+        }
+
+        .users-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .users-table tbody tr:hover {
+            background: rgba(31, 94, 255, 0.035);
+        }
+
+        .user-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .user-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            flex: 0 0 auto;
+            background: linear-gradient(145deg, rgba(31, 94, 255, 0.14), rgba(31, 94, 255, 0.05));
+            color: var(--admin-blue);
+            font-weight: 900;
+        }
+
+        .user-copy {
+            min-width: 0;
+        }
+
+        .user-name {
+            font-weight: 850;
+            line-height: 1.2;
+        }
+
+        .user-email {
+            margin-top: 3px;
+            color: var(--admin-muted);
+            font-size: 0.84rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .points-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 72px;
+            padding: 7px 10px;
+            border-radius: 999px;
+            background: rgba(255, 213, 74, 0.28);
+            color: #7a5a00;
+            font-weight: 900;
+        }
+
+        .empty-state {
+            padding: 34px 20px;
+            color: var(--admin-muted);
+            text-align: center;
+        }
+
+        @media (max-width: 700px) {
+            .users-table thead {
+                display: none;
+            }
+
+            .users-table,
+            .users-table tbody,
+            .users-table tr,
+            .users-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .users-table tr {
+                padding: 14px 16px;
+                border-bottom: 1px solid var(--admin-border);
+            }
+
+            .users-table tr:last-child {
+                border-bottom: 0;
+            }
+
+            .users-table td {
+                padding: 6px 0;
+                border: 0;
+            }
+
+            .users-table td:last-child {
+                padding-top: 10px;
+            }
+        }
+
         .admin-footer {
             margin-top: 24px;
             color: var(--admin-muted);
@@ -380,23 +529,71 @@
 
             <article class="metric-card">
                 <div class="metric-topline">
-                    <p class="metric-label">All Time</p>
+                    <p class="metric-label">All time</p>
                     <div class="metric-icon" aria-hidden="true">∞</div>
                 </div>
 
                 <p class="metric-value">{{ users_all_time|default:0 }}</p>
 
                 <p class="metric-caption">
-                    Total number of Vitamova users.
+                    Total registered Vitamova users.
                 </p>
             </article>
+        </section>
 
-            <h1>Top Users</h1>
+        <section class="section-block" aria-labelledby="top-users-heading">
+            <div class="section-heading">
+                <div>
+                    <h2 id="top-users-heading">Top users</h2>
+                    <p>Users with the highest point totals.</p>
+                </div>
+            </div>
 
-            {% for user in top_users %}
-            <p>Name: {{ user.first_name }} {{ user.last_name }} Email: {{ user.email }} Points: {{ user.total_points }}</p>
-            {% endfor %}
+            <div class="users-panel">
+                {% if top_users %}
+                    <table class="users-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Points</th>
+                            </tr>
+                        </thead>
 
+                        <tbody>
+                            {% for user in top_users %}
+                                <tr>
+                                    <td>
+                                        <div class="user-cell">
+                                            <div class="user-avatar" aria-hidden="true">
+                                                {{ user.first_name|first|upper|default:"U" }}
+                                            </div>
+
+                                            <div class="user-copy">
+                                                <div class="user-name">
+                                                    {{ user.first_name }} {{ user.last_name }}
+                                                </div>
+                                                <div class="user-email">
+                                                    {{ user.email }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <td>
+                                        <span class="points-badge">
+                                            {{ user.total_points|default:0 }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="empty-state">
+                        No user point data is available yet.
+                    </div>
+                {% endif %}
+            </div>
         </section>
 
         <footer class="admin-footer">
