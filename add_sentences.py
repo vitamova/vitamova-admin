@@ -28,7 +28,7 @@ REVIEWER_MODEL = "gpt-5.4"
 
 MAX_ATTEMPTS_PER_LEMMA = 3
 RETRY_DELAY_SECONDS = 2
-LIMIT: Optional[int] = 10
+LIMIT: Optional[int] = None
 
 SUCCESS_LOG = Path("sentence_generation_successes.jsonl")
 FAILURE_LOG = Path("sentence_generation_failures.jsonl")
