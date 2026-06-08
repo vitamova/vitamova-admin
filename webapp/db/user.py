@@ -28,3 +28,10 @@ class User:
             (days,)
         )
         return self.cursor.fetchone()[0]
+    def count_all(self):
+        self.cursor.execute(
+            """
+            SELECT COUNT(*) FROM auth_user
+            """
+        )
+        return self.cursor.fetchone()[0]

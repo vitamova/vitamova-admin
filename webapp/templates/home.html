@@ -377,6 +377,19 @@
                     New users registered during the past month.
                 </p>
             </article>
+
+                        <article class="metric-card">
+                <div class="metric-topline">
+                    <p class="metric-label">All Time</p>
+                    <div class="metric-icon" aria-hidden="true">∞</div>
+                </div>
+
+                <p class="metric-value">{{ users_all_time|default:0 }}</p>
+
+                <p class="metric-caption">
+                    Total number of Vitamova users.
+                </p>
+            </article>
         </section>
 
         <footer class="admin-footer">
