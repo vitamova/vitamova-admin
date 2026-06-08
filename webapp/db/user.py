@@ -35,3 +35,32 @@ class User:
             """
         )
         return self.cursor.fetchone()[0]
+    def top(self, limit=10):
+        # Get sum of points from the points table for each user
+        # user_id maps to id in auth_user
+        # Return in descending order of points
+        # Need to have first_name, last_name, and email from auth_user
+        self.cursor.execute(
+            """
+            SELECT u.first_name, u.last_name, u.email, COALESCE(SUM(p
+.points), 0) as total_points
+            FROM auth_user u
+            LEFT JOIN points p ON u.id = p.user_id
+            GROUP BY u.id
+            ORDER BY total_points DESC
+            LIMIT %s
+            """,
+            (limit,)
+        )
+        result = self.cursor.fetchall()
+        # Should be returned as a list of dicts with keys: first_name, last_name, email, total_points
+        return [
+            {
+                "first_name": row[0],
+                "last_name": row[1],
+                "email": row[2],
+                "total_points": row[3]
+            }
+            for row in result
+        ]
+    

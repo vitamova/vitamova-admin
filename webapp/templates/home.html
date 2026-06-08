@@ -378,7 +378,7 @@
                 </p>
             </article>
 
-                        <article class="metric-card">
+            <article class="metric-card">
                 <div class="metric-topline">
                     <p class="metric-label">All Time</p>
                     <div class="metric-icon" aria-hidden="true">∞</div>
@@ -390,6 +390,13 @@
                     Total number of Vitamova users.
                 </p>
             </article>
+
+            <h1>Top Users</h1>
+
+            {% for user in top_users %}
+            <p>Name: {{ user.first_name }} {{ user.last_name }} Email: {{ user.email }} Points: {{ user.total_points }}</p>
+            {% endfor %}
+
         </section>
 
         <footer class="admin-footer">
