@@ -201,11 +201,10 @@ Requirements:
 7. For nouns, plural, case, or other natural forms are encouraged when appropriate.
 8. For adjectives or other inflecting words, use a natural non-dictionary form when
    the language and context allow it.
-9. {ARTICLE_GUIDANCE[language]}
-10. Return the exact surface word appearing in the sentence in the `word` field.
-11. Keep the sentence understandable and useful to an intermediate learner.
-12. Do not use quotation marks merely to mention the word.
-13. Do not include translations, explanations, or extra sentences.
+9. Return the exact surface word appearing in the sentence in the `word` field.
+10. Keep the sentence understandable and useful to an intermediate learner.
+11. Do not use quotation marks merely to mention the word.
+12. Do not include translations, explanations, or extra sentences.
 {feedback_text}
 """.strip()
 
@@ -262,8 +261,7 @@ Approval requirements:
    majority of examples.
 8. If the lemma is a verb, reject an unnecessary infinitive/lemma form and revise
    it into a natural conjugated form.
-9. {ARTICLE_GUIDANCE[language]}
-10. The output must contain one sentence only and no translation or explanation.
+9. The output must contain one sentence only and no translation or explanation.
 
 If every requirement is met, set approved=true and return the candidate unchanged.
 If anything can be repaired, set approved=false, list the issues, and return a fully
