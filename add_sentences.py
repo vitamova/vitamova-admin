@@ -112,6 +112,7 @@ def contains_exact_word(sentence: str, word: str) -> bool:
 
 
 def noun_has_article(sentence: str, word: str, language: str) -> bool:
+    return True
     if language == "ru":
         return True
 
