@@ -19,9 +19,9 @@ DB_PORT = 5432
 DB_NAME = "vitamova"
 DB_USER = "admin_app"
 
-LANGUAGES = ("es", "pt", "ru")
-MIN_RANK = 2000
-MAX_RANK = 6000
+LANGUAGES = ("es")
+MIN_RANK = 6001
+MAX_RANK = 8000
 BATCH_SIZE = 20
 LIMIT: Optional[int] = None
 GENERATOR_MODEL = "gpt-5.4-mini"
