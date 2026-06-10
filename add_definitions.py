@@ -1,355 +1,423 @@
 #!/usr/bin/env python3
 
-import argparse
-import getpass
 import json
-import sys
+import re
 import time
-from typing import Any
+from pathlib import Path
+from typing import Optional
 
 import psycopg2
 import psycopg2.extras
 from openai import OpenAI
+from pydantic import BaseModel, Field
+
+DB_PASSWORD = input("Enter database password: ")
+OPENAI_KEY = input("Enter OpenAI API key: ")
+
+DB_HOST = "vitamova-db.cluster-cartvcorpihi.us-east-1.rds.amazonaws.com"
+DB_PORT = 5432
+DB_NAME = "vitamova"
+DB_USER = "admin_app"
+
+LANGUAGES = ("es", "pt", "ru")
+MIN_RANK = 2000
+MAX_RANK = 6000
+BATCH_SIZE = 20
+LIMIT: Optional[int] = None
+GENERATOR_MODEL = "gpt-5.4-mini"
+REVIEWER_MODEL = "gpt-5.4"
+MAX_ATTEMPTS_PER_BATCH = 3
+SLEEP_SECONDS = 0.25
+SUCCESS_LOG = Path("definition_rewrite_successes.jsonl")
+FAILURE_LOG = Path("definition_rewrite_failures.jsonl")
+
+LANGUAGE_NAMES = {"es": "Spanish", "pt": "Portuguese", "ru": "Russian"}
 
 
-NATIVE_LANGUAGE_FOR_TRANSLATIONS = "en"
+class DefinitionItem(BaseModel):
+    id: int
+    definition: str
 
 
-def get_args():
-    parser = argparse.ArgumentParser(
-        description="Fill missing lemma definitions and English translations using OpenAI."
-    )
-
-    parser.add_argument("--db-host", default="vitamova-db.cluster-cartvcorpihi.us-east-1.rds.amazonaws.com")
-    parser.add_argument("--db-port", default=5432, type=int)
-    parser.add_argument("--db-name", default="vitamova", required=True)
-    parser.add_argument("--db-user", default="admin_app")
-    parser.add_argument("--batch-size", default=25, type=int)
-    parser.add_argument("--limit", default=None, type=int)
-    parser.add_argument("--model", default="gpt-4.1-mini")
-    parser.add_argument("--sleep-seconds", default=0.5, type=float)
-    parser.add_argument("--dry-run", action="store_true")
-
-    return parser.parse_args()
+class DefinitionBatch(BaseModel):
+    items: list[DefinitionItem]
 
 
-def connect_db(args, db_password):
+class ReviewedDefinitionItem(BaseModel):
+    id: int
+    approved: bool
+    issues: list[str] = Field(default_factory=list)
+    definition: str
+
+
+class ReviewedDefinitionBatch(BaseModel):
+    items: list[ReviewedDefinitionItem]
+
+
+def append_jsonl(path: Path, payload: dict) -> None:
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def clean_definition(value: str) -> str:
+    return " ".join(str(value).strip().split())
+
+
+def contains_lemma(definition: str, lemma: str) -> bool:
+    normalized_lemma = clean_definition(lemma)
+    if not normalized_lemma:
+        return False
+
+    pattern = rf"(?<!\w){re.escape(normalized_lemma)}(?!\w)"
+    return re.search(pattern, definition, flags=re.IGNORECASE | re.UNICODE) is not None
+
+
+def first_cased_character(value: str) -> Optional[str]:
+    for character in value:
+        if character.isalpha():
+            return character
+    return None
+
+
+def validate_definition(definition: str, lemma: str) -> list[str]:
+    errors: list[str] = []
+    definition = clean_definition(definition)
+
+    if not definition:
+        return ["definition is empty"]
+
+    first_character = first_cased_character(definition)
+    if first_character and first_character.isupper():
+        errors.append("definition begins with a capital letter; it should begin in lowercase")
+
+    if definition.endswith((".", "!", "?", ";", ":")):
+        errors.append("definition has terminal punctuation")
+
+    if contains_lemma(definition, lemma):
+        errors.append(f'the lemma "{lemma}" appears inside its own definition')
+
+    if "\n" in definition:
+        errors.append("definition contains a line break")
+
+    if len(definition) > 260:
+        errors.append("definition is too long")
+
+    return errors
+
+
+def connect_db():
     return psycopg2.connect(
-        host=args.db_host,
-        port=args.db_port,
-        dbname=args.db_name,
-        user=args.db_user,
-        password=db_password,
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        sslmode="require",
     )
 
 
-def fetch_lemmas_to_process(conn, batch_size):
+def fetch_lemmas(conn) -> list[dict]:
+    sql = """
+        SELECT id, lemma, language, rank, pos, definition
+        FROM lemmas
+        WHERE language = ANY(%s)
+          AND rank BETWEEN %s AND %s
+        ORDER BY language, rank, id
     """
-    Fetch lemmas where:
-    - definition is NULL, OR
-    - no English translation exists in lemma_translations.
-    """
+
+    params: list[object] = [list(LANGUAGES), MIN_RANK, MAX_RANK]
+
+    if LIMIT is not None:
+        sql += "\nLIMIT %s"
+        params.append(LIMIT)
+
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-        cursor.execute(
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def update_definitions(conn, updates: list[tuple[str, int]]) -> None:
+    if not updates:
+        return
+
+    with conn.cursor() as cursor:
+        psycopg2.extras.execute_batch(
+            cursor,
             """
-            SELECT
-                l.id,
-                l.lemma,
-                l.language,
-                l.definition,
-                CASE
-                    WHEN l.language = 'en' THEN false
-                    WHEN lt.id IS NULL THEN true
-                    ELSE false
-                END AS needs_translation,
-                CASE
-                    WHEN l.definition IS NULL THEN true
-                    ELSE false
-                END AS needs_definition
-            FROM lemmas l
-            LEFT JOIN lemma_translations lt
-                ON lt.lemma_id = l.id
-               AND lt.native_language = %s
-            WHERE l.definition IS NULL
-               OR lt.id IS NULL
-            ORDER BY l.id
-            LIMIT %s
+            UPDATE lemmas
+            SET definition = %s
+            WHERE id = %s
             """,
-            [NATIVE_LANGUAGE_FOR_TRANSLATIONS, batch_size],
+            updates,
+            page_size=100,
         )
 
-        return cursor.fetchall()
+    conn.commit()
 
 
-def build_prompt(rows):
-    compact_rows = []
+def compact_rows(rows: list[dict]) -> list[dict]:
+    return [
+        {
+            "id": row["id"],
+            "lemma": row["lemma"],
+            "language": row["language"],
+            "language_name": LANGUAGE_NAMES[row["language"]],
+            "part_of_speech": row["pos"],
+            "current_definition": row["definition"],
+        }
+        for row in rows
+    ]
 
-    for row in rows:
-        compact_rows.append(
+
+def build_generator_prompt(rows: list[dict], previous_feedback: Optional[dict[int, list[str]]] = None) -> str:
+    feedback_section = ""
+    if previous_feedback:
+        feedback_section = (
+            "\nPrevious attempts had the following problems. Correct all of them:\n"
+            + json.dumps(previous_feedback, ensure_ascii=False, indent=2)
+        )
+
+    return f"""
+Rewrite the dictionary definitions for the supplied lemmas.
+
+Each definition must:
+1. Be written in the same language as the lemma: es = Spanish, pt = Portuguese, ru = Russian.
+2. Be brief, clear, natural, and suitable for an intermediate language learner.
+3. Distinguish the word from nearby meanings without becoming encyclopedic.
+4. Express only the principal meaning represented by the lemma entry.
+5. Begin with a lowercase letter.
+6. Have no period or other terminal punctuation.
+7. Be a compact dictionary-style phrase rather than a full sentence.
+8. Never use the lemma itself anywhere in its own definition.
+9. Never use a trivial variation whose only purpose is to repeat the lemma.
+10. Avoid circular wording, such as defining a verb as \"the action of [lemma]\".
+11. Match the part of speech.
+12. Do not include translations, examples, usage notes, labels, numbering, quotation marks, or extra commentary.
+13. Return exactly one definition for every supplied ID.
+14. Avoid beginning with a proper noun; rephrase so lowercase formatting remains natural.
+
+Items:
+{json.dumps(compact_rows(rows), ensure_ascii=False, indent=2)}
+{feedback_section}
+""".strip()
+
+
+def build_reviewer_prompt(source_rows: list[dict], generated: DefinitionBatch) -> str:
+    source_by_id = {int(row["id"]): row for row in source_rows}
+    review_items = []
+
+    for item in generated.items:
+        source = source_by_id.get(item.id)
+        if source is None:
+            continue
+
+        review_items.append(
             {
-                "id": row["id"],
-                "lemma": row["lemma"],
-                "language": row["language"],
-                "needs_definition": row["needs_definition"],
-                "needs_translation": row["needs_translation"],
+                "id": item.id,
+                "lemma": source["lemma"],
+                "language": source["language"],
+                "language_name": LANGUAGE_NAMES[source["language"]],
+                "part_of_speech": source["pos"],
+                "proposed_definition": item.definition,
             }
         )
 
     return f"""
-You are helping populate a language-learning database.
+Act as a strict senior lexicographer reviewing definitions for a language-learning database.
 
-For each lemma below:
-1. If needs_definition is true, write a brief but complete definition in the lemma's own language.
-   - The language code is in the "language" field.
-   - The definition should be suitable for a learner.
-   - Keep it concise, but complete enough to distinguish the word.
-2. If needs_translation is true, write an English translation.
-   - Prefer one English word where possible.
-   - Use multiple English words separated by comma and a space only when needed to capture important meanings or make the meaning clearer.
-   - Do not include long explanations in the translation field.
+For every item, verify:
+1. The definition is accurate for the lemma and part of speech.
+2. It is written entirely in the lemma's own language.
+3. It is concise but sufficiently informative.
+4. It is natural dictionary-style wording, not an example sentence.
+5. It begins with a lowercase letter.
+6. It has no terminal punctuation.
+7. The lemma itself does not appear anywhere in the definition.
+8. The wording is not circular and does not merely restate a morphological variation of the lemma.
+9. It contains no translations, examples, labels, usage notes, or commentary.
+10. It expresses a useful principal meaning for an intermediate learner.
 
-Return only valid JSON matching the provided schema.
+If the proposed definition satisfies every requirement, set approved=true, return it unchanged, and return an empty issues list.
+If it violates any requirement, set approved=false, list the problems, and provide a fully corrected replacement definition.
+Return exactly one reviewed item for every supplied ID.
 
-Lemmas:
-{json.dumps(compact_rows, ensure_ascii=False, indent=2)}
+Items:
+{json.dumps(review_items, ensure_ascii=False, indent=2)}
 """.strip()
 
 
-def call_openai(client, model, rows):
-    prompt = build_prompt(rows)
-
-    response = client.responses.create(
-        model=model,
+def generate_definitions(client: OpenAI, rows: list[dict], previous_feedback: Optional[dict[int, list[str]]] = None) -> DefinitionBatch:
+    response = client.responses.parse(
+        model=GENERATOR_MODEL,
+        reasoning={"effort": "low"},
         input=[
             {
-                "role": "system",
-                "content": (
-                    "You produce concise dictionary-style data for a language-learning app. "
-                    "Return only the requested structured data."
-                ),
+                "role": "developer",
+                "content": "You are an expert multilingual lexicographer specializing in Spanish, Portuguese, and Russian learner dictionaries.",
             },
-            {
-                "role": "user",
-                "content": prompt,
-            },
+            {"role": "user", "content": build_generator_prompt(rows, previous_feedback)},
         ],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": "lemma_updates",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "items": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "properties": {
-                                    "id": {"type": "integer"},
-                                    "definition": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                    "translation": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "null"},
-                                        ]
-                                    },
-                                },
-                                "required": ["id", "definition", "translation"],
-                            },
-                        }
-                    },
-                    "required": ["items"],
-                },
-            }
-        },
+        text_format=DefinitionBatch,
     )
 
-    return json.loads(response.output_text)
+    if response.output_parsed is None:
+        raise RuntimeError("The generator did not return a parsed structured response.")
+
+    return response.output_parsed
 
 
-def clean_text(value: Any):
-    if value is None:
-        return None
+def review_definitions(client: OpenAI, rows: list[dict], generated: DefinitionBatch) -> ReviewedDefinitionBatch:
+    response = client.responses.parse(
+        model=REVIEWER_MODEL,
+        reasoning={"effort": "medium"},
+        input=[
+            {
+                "role": "developer",
+                "content": "You are a strict senior multilingual lexicographer. Correct inaccurate, circular, inconsistent, or poorly formatted definitions.",
+            },
+            {"role": "user", "content": build_reviewer_prompt(rows, generated)},
+        ],
+        text_format=ReviewedDefinitionBatch,
+    )
 
-    value = str(value).strip()
+    if response.output_parsed is None:
+        raise RuntimeError("The reviewer did not return a parsed structured response.")
 
-    if not value:
-        return None
-
-    return value
+    return response.output_parsed
 
 
-def apply_updates(conn, rows, openai_data, dry_run=False):
+def process_batch(client: OpenAI, rows: list[dict]) -> tuple[list[tuple[str, int]], list[dict]]:
     rows_by_id = {int(row["id"]): row for row in rows}
+    expected_ids = set(rows_by_id)
+    feedback: Optional[dict[int, list[str]]] = None
 
-    items = openai_data.get("items", [])
+    for attempt in range(1, MAX_ATTEMPTS_PER_BATCH + 1):
+        generated = generate_definitions(client, rows, feedback)
+        generated_ids = {item.id for item in generated.items}
 
-    if not isinstance(items, list):
-        raise ValueError("OpenAI response did not include an items list.")
-
-    definition_updates = []
-    translation_inserts = []
-
-    for item in items:
-        lemma_id = int(item["id"])
-
-        if lemma_id not in rows_by_id:
-            print(f"Skipping unexpected lemma id from OpenAI: {lemma_id}")
+        if generated_ids != expected_ids:
+            feedback = {
+                0: [
+                    "response IDs did not match the requested IDs",
+                    f"missing IDs: {sorted(expected_ids - generated_ids)}",
+                    f"unexpected IDs: {sorted(generated_ids - expected_ids)}",
+                ]
+            }
             continue
 
-        source_row = rows_by_id[lemma_id]
+        reviewed = review_definitions(client, rows, generated)
+        reviewed_by_id = {item.id: item for item in reviewed.items}
 
-        definition = clean_text(item.get("definition"))
-        translation = clean_text(item.get("translation"))
+        updates: list[tuple[str, int]] = []
+        invalid_feedback: dict[int, list[str]] = {}
 
-        if source_row["needs_definition"] and definition:
-            definition_updates.append((definition, lemma_id))
+        for lemma_id, source_row in rows_by_id.items():
+            reviewed_item = reviewed_by_id.get(lemma_id)
+            if reviewed_item is None:
+                invalid_feedback[lemma_id] = ["reviewer omitted this ID"]
+                continue
 
-        if (
-            source_row["needs_translation"]
-            and source_row["language"] != "en"
-            and translation
-        ):
-            translation_inserts.append(
-                (
-                    lemma_id,
-                    NATIVE_LANGUAGE_FOR_TRANSLATIONS,
-                    translation,
-                )
-            )
+            definition = clean_definition(reviewed_item.definition)
+            validation_errors = validate_definition(definition, source_row["lemma"])
 
-    if dry_run:
-        print("\nDRY RUN: would update definitions:")
-        for definition, lemma_id in definition_updates:
-            print(f"  lemma_id={lemma_id}: {definition}")
+            if validation_errors:
+                invalid_feedback[lemma_id] = reviewed_item.issues + validation_errors
+                continue
 
-        print("\nDRY RUN: would insert translations:")
-        for lemma_id, native_language, translation in translation_inserts:
-            print(f"  lemma_id={lemma_id}, native_language={native_language}: {translation}")
+            updates.append((definition, lemma_id))
 
-        return len(definition_updates), len(translation_inserts)
+        if not invalid_feedback:
+            return updates, []
 
-    with conn.cursor() as cursor:
-        if definition_updates:
-            psycopg2.extras.execute_batch(
-                cursor,
-                """
-                UPDATE lemmas
-                SET definition = %s
-                WHERE id = %s
-                  AND definition IS NULL
-                """,
-                definition_updates,
-                page_size=100,
-            )
+        feedback = invalid_feedback
+        print(f"  Attempt {attempt} left {len(invalid_feedback)} invalid definitions.")
 
-        if translation_inserts:
-            psycopg2.extras.execute_batch(
-                cursor,
-                """
-                INSERT INTO lemma_translations (
-                    lemma_id,
-                    native_language,
-                    translation
-                )
-                VALUES (
-                    %s,
-                    %s,
-                    %s
-                )
-                ON CONFLICT (lemma_id, native_language)
-                DO NOTHING
-                """,
-                translation_inserts,
-                page_size=100,
-            )
+    failures = []
+    for lemma_id, source_row in rows_by_id.items():
+        failures.append(
+            {
+                "id": lemma_id,
+                "lemma": source_row["lemma"],
+                "language": source_row["language"],
+                "rank": source_row["rank"],
+                "issues": (feedback or {}).get(lemma_id, ["maximum attempts exhausted"]),
+            }
+        )
 
-    conn.commit()
-
-    return len(definition_updates), len(translation_inserts)
+    return [], failures
 
 
-def main():
-    args = get_args()
-
-    openai_key = getpass.getpass("OpenAI API key: ")
-    db_password = getpass.getpass(f"Database password for {args.db_user}: ")
-
-    client = OpenAI(api_key=openai_key)
-
-    processed_lemmas = 0
-    total_definition_updates = 0
-    total_translation_inserts = 0
+def main() -> None:
+    client = OpenAI(api_key=OPENAI_KEY)
+    conn = connect_db()
 
     try:
-        conn = connect_db(args, db_password)
-    except Exception as error:
-        print(f"Could not connect to database: {error}", file=sys.stderr)
-        sys.exit(1)
+        rows = fetch_lemmas(conn)
+        total = len(rows)
+        print(f"Found {total} lemmas for {', '.join(LANGUAGES)} in ranks {MIN_RANK}-{MAX_RANK}.")
 
-    try:
-        while True:
-            if args.limit is not None:
-                remaining = args.limit - processed_lemmas
+        total_updated = 0
+        total_failed = 0
+        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
 
-                if remaining <= 0:
-                    break
-
-                batch_size = min(args.batch_size, remaining)
-            else:
-                batch_size = args.batch_size
-
-            rows = fetch_lemmas_to_process(conn, batch_size)
-
-            if not rows:
-                print("No more missing definitions or English translations found.")
-                break
-
-            print(f"\nProcessing batch of {len(rows)} lemmas...")
-            print("Lemma IDs:", ", ".join(str(row["id"]) for row in rows))
+        for start in range(0, total, BATCH_SIZE):
+            batch = rows[start:start + BATCH_SIZE]
+            batch_number = (start // BATCH_SIZE) + 1
+            print(f"\nBatch {batch_number}/{total_batches}: {len(batch)} lemmas")
 
             try:
-                openai_data = call_openai(client, args.model, rows)
-                definition_count, translation_count = apply_updates(
-                    conn,
-                    rows,
-                    openai_data,
-                    dry_run=args.dry_run,
-                )
+                updates, failures = process_batch(client, batch)
 
-                processed_lemmas += len(rows)
-                total_definition_updates += definition_count
-                total_translation_inserts += translation_count
+                if updates:
+                    update_definitions(conn, updates)
 
-                print(
-                    f"Batch complete. Definitions updated: {definition_count}. "
-                    f"Translations inserted: {translation_count}."
-                )
+                    batch_by_id = {row["id"]: row for row in batch}
+                    for definition, lemma_id in updates:
+                        source_row = batch_by_id[lemma_id]
+                        append_jsonl(
+                            SUCCESS_LOG,
+                            {
+                                "id": lemma_id,
+                                "lemma": source_row["lemma"],
+                                "language": source_row["language"],
+                                "rank": source_row["rank"],
+                                "definition": definition,
+                            },
+                        )
 
+                    total_updated += len(updates)
+
+                for failure in failures:
+                    append_jsonl(FAILURE_LOG, failure)
+
+                total_failed += len(failures)
+                print(f"  Updated: {len(updates)} | Failed: {len(failures)}")
+
+            except KeyboardInterrupt:
+                raise
             except Exception as error:
                 conn.rollback()
-                print(f"Error processing batch: {error}", file=sys.stderr)
-                print("Stopping so you can inspect the issue safely.", file=sys.stderr)
-                sys.exit(1)
+                append_jsonl(
+                    FAILURE_LOG,
+                    {
+                        "batch_start": start,
+                        "ids": [row["id"] for row in batch],
+                        "error": str(error),
+                    },
+                )
+                total_failed += len(batch)
+                print(f"  Batch failed: {error}")
 
-            if args.sleep_seconds > 0:
-                time.sleep(args.sleep_seconds)
+            if SLEEP_SECONDS > 0:
+                time.sleep(SLEEP_SECONDS)
 
-        print("\nDone.")
-        print(f"Lemmas processed: {processed_lemmas}")
-        print(f"Definitions updated: {total_definition_updates}")
-        print(f"English translations inserted: {total_translation_inserts}")
-
-        if args.dry_run:
-            print("\nDRY RUN was enabled. No database changes were made.")
+        print("\nFinished.")
+        print(f"Definitions updated: {total_updated}")
+        print(f"Definitions failed: {total_failed}")
+        print(f"Success log: {SUCCESS_LOG.resolve()}")
+        print(f"Failure log: {FAILURE_LOG.resolve()}")
 
     finally:
         conn.close()
