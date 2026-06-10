@@ -19,7 +19,7 @@ DB_PORT = 5432
 DB_NAME = "vitamova"
 DB_USER = "admin_app"
 
-LANGUAGES = ("es")
+LANGUAGES = ["es"]
 MIN_RANK = 6001
 MAX_RANK = 8000
 BATCH_SIZE = 20
